@@ -6,11 +6,15 @@ from numpy.linalg import inv
 
 
 dt = 1.0/60
-F = np.array([[1, dt, 0], [0, 1, dt], [0, 0, 1]])
+F = np.array([[1, dt, 0],
+              [0, 1, dt],
+              [0, 0, 1]])
 H = np.array([1, 0, 0]).reshape(1, 3)
-Q = np.array([[0.05, 0.05, 0.0], [0.05, 0.05, 0.0], [0.0, 0.0, 0.0]])
-R = np.array([0.5]).reshape(1, 1)
-
+Q = np.array([[0.05, 0.05, 0.0],
+              [0.05, 0.05, 0.0],
+              [0.0, 0.0, 0.0]])
+R = np.array([10]).reshape(1, 1)
+B = np.array([[0.5*dt**2], [dt], [0]])
 
 class KalmanFilter(Node):
     def __init__(self, F = None, B = None, H = None, Q = None, R = None, P = None, x0 = None):
@@ -19,6 +23,7 @@ class KalmanFilter(Node):
 
         if(F is None or H is None):
             raise ValueError("Set proper system dynamics.")
+        self.velocity_x = 0.0 
         self.estimated_odometry = Odometry()
         self.counter_habda =0 
         self.n = F.shape[1]
@@ -36,12 +41,16 @@ class KalmanFilter(Node):
                                                      '/odom_noise',
                                                      self.odom_callback,
                                                      1)
+        self.subscription_2 = self.create_subscription(Odometry,
+                                                     '/odom',
+                                                     self.odom_2_callback,
+                                                     1)
         
         #publish the estimated reading
         self.estimated_pub=self.create_publisher(Odometry,
                                                  "/odom_estimated",1)
 
-    def predict(self, u = 0):
+    def predict(self, u ):
         self.x = np.dot(self.F, self.x) + np.dot(self.B, u)
         self.P = np.dot(np.dot(self.F, self.P), self.F.T) + self.Q
         return self.x
@@ -64,11 +73,8 @@ class KalmanFilter(Node):
         
 
 
-        # predictions = []
-        # predictions.append(np.dot(H,  self.predict())[0])
 
-        predictions = np.dot(H,  self.predict())[0]
-
+        predictions = np.dot(H, self.predict(np.array([[self.velocity_x]])))[0]
 
 
 
@@ -81,7 +87,10 @@ class KalmanFilter(Node):
         self.estimated_odometry.pose.pose.position.x = float(predictions)
         self.estimated_pub.publish(self.estimated_odometry)
 
-        
+
+    def odom_2_callback(self, msg:Odometry):
+        self.velocity_x = msg.twist.twist.linear.x
+
 
 def main(args=None):
     rclpy.init(args=args)
